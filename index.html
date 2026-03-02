@@ -9,79 +9,26 @@
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
 <style>
-html,body{
-margin:0;
-padding:0;
-height:100%;
-font-family:sans-serif;
-}
-
-#map{
-position:absolute;
-top:0;
-bottom:0;
-width:100%;
-height:100vh;
-}
-
+html,body{margin:0;padding:0;height:100%;}
+#map{position:absolute;top:0;bottom:0;width:100%;}
 #panel{
-position:absolute;
-top:10px;
-left:10px;
-background:white;
-padding:12px;
-border-radius:14px;
-width:260px;
-z-index:10;
-box-shadow:0 4px 12px rgba(0,0,0,.3);
+position:absolute;top:10px;left:10px;
+background:white;padding:12px;border-radius:12px;
+z-index:10;width:260px;
+box-shadow:0 4px 10px rgba(0,0,0,.3);
 }
-
-input{
-width:100%;
-padding:6px;
-margin-bottom:8px;
-border-radius:8px;
-border:1px solid #ccc;
-}
-
-button{
-width:100%;
-padding:8px;
-border-radius:20px;
-border:none;
-background:#1976d2;
-color:white;
-font-weight:bold;
-cursor:pointer;
-}
-
-#navinfo{
-position:absolute;
-bottom:0;
-left:0;
-width:100%;
-background:#1976d2;
-color:white;
-padding:14px;
-font-size:18px;
-z-index:9;
-}
-
+input{width:100%;padding:6px;margin-bottom:6px;}
+button{width:100%;padding:8px;border:none;border-radius:20px;background:#1976d2;color:white;}
 .round{
-position:absolute;
-right:15px;
-width:55px;
-height:55px;
-border-radius:50%;
-border:none;
-box-shadow:0 4px 10px rgba(0,0,0,.4);
-font-weight:bold;
-background:white;
-cursor:pointer;
+position:absolute;right:15px;width:55px;height:55px;
+border-radius:50%;border:none;background:white;
+box-shadow:0 4px 10px rgba(0,0,0,.4);font-size:20px;
 }
-
-#compass{bottom:90px;font-size:22px}
-#view{bottom:20px}
+#locate{bottom:20px;}
+#navinfo{
+position:absolute;bottom:0;left:0;width:100%;
+background:#1976d2;color:white;padding:14px;font-size:18px;
+}
 </style>
 </head>
 <body>
@@ -89,83 +36,92 @@ cursor:pointer;
 <div id="map"></div>
 
 <div id="panel">
-<input id="dest" placeholder="目的地（住所/店舗名）">
-<button onclick="startNav()">案内開始</button>
+<input id="dest" placeholder="目的地（住所）">
+<button id="startBtn" onclick="startNav()" disabled>GPS取得中...</button>
 </div>
 
-<div id="navinfo">目的地を入力してください</div>
+<div id="navinfo">GPSを取得しています...</div>
 
-<button id="compass" class="round">🧭</button>
-<button id="view" class="round">2D</button>
+<button id="locate" class="round">📍</button>
 
 <script>
 
-let map=new maplibregl.Map({
+let map = new maplibregl.Map({
 container:'map',
-style:'https://tiles.openfreemap.org/styles/bright',
+style:{
+"version":8,
+"sources":{
+"osm":{
+"type":"raster",
+"tiles":[
+"https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+"https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+"https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+],
+"tileSize":256
+}
+},
+"layers":[{"id":"osm","type":"raster","source":"osm"}]
+},
 center:[139.767,35.681],
-zoom:15,
-pitch:0
+zoom:14
 });
 
 let userPos=null;
 let marker=null;
-let routeData=null;
-let steps=[];
-let currentStep=0;
-let lastDistance=Infinity;
-let northMode=true;
-let is3D=false;
+let heading=0;
 
-function arrow(){
+function createArrow(){
 let el=document.createElement("div");
-el.innerHTML=`<svg width="40" height="40" viewBox="0 0 24 24">
-<path d="M12 2 L22 22 L12 17 L2 22 Z"
-fill="#1976d2" stroke="white" stroke-width="1"/></svg>`;
+el.style.width="30px";
+el.style.height="30px";
+el.style.background="#1976d2";
+el.style.clipPath="polygon(50% 0%, 100% 100%, 50% 75%, 0% 100%)";
+el.style.transformOrigin="center";
 return el;
 }
 
-function speak(t){
-let u=new SpeechSynthesisUtterance(t);
-u.lang="ja-JP";
-speechSynthesis.cancel();
-speechSynthesis.speak(u);
-}
+let arrowEl=createArrow();
 
 navigator.geolocation.watchPosition(pos=>{
 
-let speed=pos.coords.speed||0;
-if(speed<0.8) return;
-
 userPos=[pos.coords.longitude,pos.coords.latitude];
+heading=pos.coords.heading||heading;
 
 if(!marker){
-marker=new maplibregl.Marker({element:arrow()})
+marker=new maplibregl.Marker({element:arrowEl})
 .setLngLat(userPos)
 .addTo(map);
-map.setCenter(userPos);
 }else{
 marker.setLngLat(userPos);
 }
 
-if(!northMode && pos.coords.heading!=null){
-map.easeTo({bearing:pos.coords.heading,duration:300});
+arrowEl.style.transform="rotate("+heading+"deg)";
+
+map.setCenter(userPos);
+
+document.getElementById("startBtn").disabled=false;
+document.getElementById("startBtn").innerText="案内開始";
+document.getElementById("navinfo").innerText="目的地を入力してください";
+
+},{enableHighAccuracy:true});
+
+document.getElementById("locate").onclick=()=>{
+if(userPos){
+map.flyTo({center:userPos,zoom:16});
 }
-
-updateNav();
-
-});
+};
 
 async function startNav(){
 
-if(!userPos){alert("GPS取得中");return;}
+if(!userPos){alert("GPSまだ取得できていません");return;}
 
 let addr=document.getElementById("dest").value;
 if(!addr){alert("目的地入力");return;}
 
-let geo=await fetch(
-"https://nominatim.openstreetmap.org/search?format=json&q="+encodeURIComponent(addr)
-);
+document.getElementById("navinfo").innerText="ルート取得中...";
+
+let geo=await fetch("https://nominatim.openstreetmap.org/search?format=json&q="+encodeURIComponent(addr));
 let g=await geo.json();
 if(!g.length){alert("住所見つからない");return;}
 
@@ -174,104 +130,36 @@ let dest=[parseFloat(g[0].lon),parseFloat(g[0].lat)];
 let res=await fetch(
 "https://router.project-osrm.org/route/v1/driving/"
 +userPos.join(",")+";"+dest.join(",")
-+"?overview=full&steps=true&geometries=geojson"
++"?overview=full&geometries=geojson"
 );
 
-routeData=await res.json();
-if(!routeData.routes){alert("ルート失敗");return;}
+let data=await res.json();
+if(!data.routes){alert("ルート取得失敗");return;}
 
-steps=routeData.routes[0].legs[0].steps;
-currentStep=0;
-lastDistance=Infinity;
-
-drawRoute(routeData.routes[0].geometry.coordinates);
-
-let min=Math.round(routeData.routes[0].duration/60);
-document.getElementById("navinfo").innerHTML=
-"所要時間 約"+min+"分";
-
-speak("案内を開始します");
-
-}
-
-function drawRoute(coords){
-
-if(!map.isStyleLoaded()){
-setTimeout(()=>drawRoute(coords),500);
-return;
-}
+let coords=data.routes[0].geometry.coordinates;
 
 if(map.getSource("route")){
 map.getSource("route").setData({
-type:"Feature",
-geometry:{type:"LineString",coordinates:coords}
+"type":"Feature",
+"geometry":{"type":"LineString","coordinates":coords}
 });
 }else{
-map.addSource("route",{type:"geojson",data:{
-type:"Feature",
-geometry:{type:"LineString",coordinates:coords}
-}});
+map.addSource("route",{
+"type":"geojson",
+"data":{"type":"Feature","geometry":{"type":"LineString","coordinates":coords}}
+});
 map.addLayer({
-id:"route",
-type:"line",
-source:"route",
-paint:{'line-color':'#1976d2','line-width':6}
+"id":"route",
+"type":"line",
+"source":"route",
+"paint":{"line-color":"#1976d2","line-width":6}
 });
 }
+
+let min=Math.round(data.routes[0].duration/60);
+document.getElementById("navinfo").innerText="所要時間 約"+min+"分";
+
 }
-
-function updateNav(){
-
-if(!steps.length||!userPos) return;
-
-let step=steps[currentStep];
-let end=step.maneuver.location;
-
-let dx=end[0]-userPos[0];
-let dy=end[1]-userPos[1];
-let dist=Math.sqrt(dx*dx+dy*dy)*111000;
-
-if(dist>lastDistance) return;
-lastDistance=dist;
-
-let dir="直進";
-if(step.maneuver.modifier=="right") dir="右折";
-if(step.maneuver.modifier=="left") dir="左折";
-
-document.getElementById("navinfo").innerHTML=
-Math.round(dist)+"m先 "+dir;
-
-if(dist<200&&!step.announced){
-speak("200メートル先 "+dir);
-step.announced=true;
-}
-
-if(dist<15){
-currentStep++;
-lastDistance=Infinity;
-if(currentStep>=steps.length){
-speak("到着しました");
-document.getElementById("navinfo").innerHTML="到着しました";
-steps=[];
-}
-}
-}
-
-document.getElementById("compass").onclick=()=>{
-northMode=!northMode;
-if(northMode) map.setBearing(0);
-};
-
-document.getElementById("view").onclick=()=>{
-is3D=!is3D;
-if(is3D){
-map.easeTo({pitch:60});
-document.getElementById("view").innerText="3D";
-}else{
-map.easeTo({pitch:0});
-document.getElementById("view").innerText="2D";
-}
-};
 
 </script>
 </body>
